@@ -1,26 +1,33 @@
+package App;
+
 import javax.swing.*;
 import javax.swing.event.*;
 import javax.swing.text.*;
+import javax.swing.undo.UndoManager;
 import java.awt.*;
 import java.awt.event.*;
+import java.io.*;
 
 public class TextEditor {
-    private JFrame frame;
-    private JTextPane textPane;
-    private JComboBox<String> fontSizeComboBox;
-    private JToggleButton boldButton;
-    private JToggleButton italicButton;
-    private JToggleButton underlineButton;
-    private JButton textColorButton;
+    private final JFrame frame;
+    private final JTextPane textPane;
+    private final JComboBox<String> fontSizeComboBox;
+    private final JToggleButton boldButton;
+    private final JToggleButton italicButton;
+    private final JToggleButton underlineButton;
+    private final JButton textColorButton;
+    private final UndoManager undoManager;
 
     public TextEditor() {
         frame = new JFrame("Text Editor");
         textPane = new JTextPane();
+        textPane.setBackground(new Color(255, 255, 224));
         fontSizeComboBox = new JComboBox<>(new String[]{"12", "14", "16", "18", "20"});
         boldButton = new JToggleButton("Bold");
         italicButton = new JToggleButton("Italic");
         underlineButton = new JToggleButton("Underline");
         textColorButton = new JButton("Text Color");
+        undoManager = new UndoManager();
 
         createUI();
     }
@@ -41,6 +48,79 @@ public class TextEditor {
 
         frame.add(toolPanel, BorderLayout.NORTH);
 
+        JMenuBar menuBar = new JMenuBar();
+        JMenu fileMenu = new JMenu("File");
+
+        JMenuItem newFile = new JMenuItem("New");
+        JMenuItem openFile = new JMenuItem("Open");
+        JMenuItem saveFile = new JMenuItem("Save");
+        JMenuItem exit = new JMenuItem("Exit");
+
+        newFile.addActionListener(new ActionListener() {
+            @Override
+            public void actionPerformed(ActionEvent e) {
+                textPane.setText("");
+            }
+        });
+
+        openFile.addActionListener(new ActionListener() {
+            @Override
+            public void actionPerformed(ActionEvent e) {
+                openFile();
+            }
+        });
+
+        saveFile.addActionListener(new ActionListener() {
+            @Override
+            public void actionPerformed(ActionEvent e) {
+                saveFile();
+            }
+        });
+
+        exit.addActionListener(new ActionListener() {
+            @Override
+            public void actionPerformed(ActionEvent e) {
+                frame.dispose();
+            }
+        });
+
+        fileMenu.add(newFile);
+        fileMenu.add(openFile);
+        fileMenu.add(saveFile);
+        fileMenu.add(exit);
+
+        menuBar.add(fileMenu);
+
+        JMenu editMenu = new JMenu("Edit");
+
+        JMenuItem undoMenuItem = new JMenuItem("Undo");
+        JMenuItem redoMenuItem = new JMenuItem("Redo");
+
+        undoMenuItem.addActionListener(new ActionListener() {
+            @Override
+            public void actionPerformed(ActionEvent e) {
+                if (undoManager.canUndo()) {
+                    undoManager.undo();
+                }
+            }
+        });
+
+        redoMenuItem.addActionListener(new ActionListener() {
+            @Override
+            public void actionPerformed(ActionEvent e) {
+                if (undoManager.canRedo()) {
+                    undoManager.redo();
+                }
+            }
+        });
+
+        editMenu.add(undoMenuItem);
+        editMenu.add(redoMenuItem);
+
+        menuBar.add(editMenu);
+
+        frame.setJMenuBar(menuBar);
+
         setupListeners();
 
         frame.setVisible(true);
@@ -50,30 +130,28 @@ public class TextEditor {
         fontSizeComboBox.addActionListener(new ActionListener() {
             @Override
             public void actionPerformed(ActionEvent e) {
-                String selectedSize = (String) fontSizeComboBox.getSelectedItem();
-                int size = Integer.parseInt(selectedSize);
-                setFontSize(size);
+                applyAttributes();
             }
         });
 
         boldButton.addActionListener(new ActionListener() {
             @Override
             public void actionPerformed(ActionEvent e) {
-                setBold(boldButton.isSelected());
+                applyAttributes();
             }
         });
 
         italicButton.addActionListener(new ActionListener() {
             @Override
             public void actionPerformed(ActionEvent e) {
-                setItalic(italicButton.isSelected());
+                applyAttributes();
             }
         });
 
         underlineButton.addActionListener(new ActionListener() {
             @Override
             public void actionPerformed(ActionEvent e) {
-                setUnderline(underlineButton.isSelected());
+                applyAttributes();
             }
         });
 
@@ -81,56 +159,86 @@ public class TextEditor {
             @Override
             public void actionPerformed(ActionEvent e) {
                 chooseTextColor();
+                applyAttributes();
             }
         });
 
-        textPane.getDocument().addDocumentListener(new DocumentListener() {
+        textPane.getDocument().addUndoableEditListener(new UndoableEditListener() {
             @Override
-            public void insertUpdate(DocumentEvent e) {}
+            public void undoableEditHappened(UndoableEditEvent e) {
+                undoManager.addEdit(e.getEdit());
+            }
+        });
 
-            @Override
-            public void removeUpdate(DocumentEvent e) {}
+        InputMap im = textPane.getInputMap(JComponent.WHEN_FOCUSED);
+        ActionMap am = textPane.getActionMap();
 
+        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_Z, InputEvent.CTRL_DOWN_MASK), "Undo");
+        am.put("Undo", new AbstractAction() {
             @Override
-            public void changedUpdate(DocumentEvent e) {}
+            public void actionPerformed(ActionEvent e) {
+                if (undoManager.canUndo()) {
+                    undoManager.undo();
+                }
+            }
+        });
+
+        im.put(KeyStroke.getKeyStroke(KeyEvent.VK_Y, InputEvent.CTRL_DOWN_MASK), "Redo");
+        am.put("Redo", new AbstractAction() {
+            @Override
+            public void actionPerformed(ActionEvent e) {
+                if (undoManager.canRedo()) {
+                    undoManager.redo();
+                }
+            }
         });
     }
 
-    private void setFontSize(int size) {
+    private void applyAttributes() {
         StyledDocument doc = textPane.getStyledDocument();
-        Style style = textPane.addStyle("FontStyle", null);
+        Style style = textPane.addStyle("CurrentStyle", null);
+
+        String selectedSize = (String) fontSizeComboBox.getSelectedItem();
+        int size = Integer.parseInt(selectedSize);
         StyleConstants.setFontSize(style, size);
-        doc.setCharacterAttributes(textPane.getSelectionStart(), textPane.getSelectionEnd() - textPane.getSelectionStart(), style, false);
-    }
 
-    private void setBold(boolean bold) {
-        StyledDocument doc = textPane.getStyledDocument();
-        Style style = textPane.addStyle("BoldStyle", null);
-        StyleConstants.setBold(style, bold);
-        doc.setCharacterAttributes(textPane.getSelectionStart(), textPane.getSelectionEnd() - textPane.getSelectionStart(), style, false);
-    }
+        StyleConstants.setBold(style, boldButton.isSelected());
+        StyleConstants.setItalic(style, italicButton.isSelected());
+        StyleConstants.setUnderline(style, underlineButton.isSelected());
 
-    private void setItalic(boolean italic) {
-        StyledDocument doc = textPane.getStyledDocument();
-        Style style = textPane.addStyle("ItalicStyle", null);
-        StyleConstants.setItalic(style, italic);
-        doc.setCharacterAttributes(textPane.getSelectionStart(), textPane.getSelectionEnd() - textPane.getSelectionStart(), style, false);
-    }
+        StyleConstants.setForeground(style, textPane.getForeground());  // Apply current text color
 
-    private void setUnderline(boolean underline) {
-        StyledDocument doc = textPane.getStyledDocument();
-        Style style = textPane.addStyle("UnderlineStyle", null);
-        StyleConstants.setUnderline(style, underline);
-        doc.setCharacterAttributes(textPane.getSelectionStart(), textPane.getSelectionEnd() - textPane.getSelectionStart(), style, false);
+        textPane.setCharacterAttributes(style, false);
     }
 
     private void chooseTextColor() {
         Color selectedColor = JColorChooser.showDialog(frame, "Choose Text Color", textPane.getForeground());
         if (selectedColor != null) {
-            StyledDocument doc = textPane.getStyledDocument();
-            Style style = textPane.addStyle("TextColorStyle", null);
-            StyleConstants.setForeground(style, selectedColor);
-            doc.setCharacterAttributes(textPane.getSelectionStart(), textPane.getSelectionEnd() - textPane.getSelectionStart(), style, false);
+            textPane.setForeground(selectedColor);
+        }
+    }
+
+    private void saveFile() {
+        JFileChooser fileChooser = new JFileChooser();
+        int option = fileChooser.showSaveDialog(frame);
+        if (option == JFileChooser.APPROVE_OPTION) {
+            try (FileWriter writer = new FileWriter(fileChooser.getSelectedFile())) {
+                writer.write(textPane.getText());
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
+        }
+    }
+
+    private void openFile() {
+        JFileChooser fileChooser = new JFileChooser();
+        int option = fileChooser.showOpenDialog(frame);
+        if (option == JFileChooser.APPROVE_OPTION) {
+            try (BufferedReader reader = new BufferedReader(new FileReader(fileChooser.getSelectedFile()))) {
+                textPane.read(reader, null);
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
         }
     }
 
